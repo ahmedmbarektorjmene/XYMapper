@@ -147,9 +147,13 @@ pub fn run() -> AppResult<()> {
             let Some(layout) = Layout::from_label(&label) else {
                 return;
             };
-            state
-                .borrow_mut()
-                .update_controller(&discovered, |entry| entry.layout = layout);
+            state.borrow_mut().update_controller(&discovered, |entry| {
+                entry.layout = layout;
+                // A predefined layout replaces the mapping wholesale.
+                if layout != Layout::Custom {
+                    entry.mapping = crate::mapping::layouts::layout_mapping(layout);
+                }
+            });
             let _ = state.borrow().save();
         });
     }

@@ -400,6 +400,17 @@ impl ControllerMapping {
         }
     }
 
+    /// Whether every one of the 21 controls has a source assigned.
+    pub fn is_complete(&self) -> bool {
+        ControlId::ALL.iter().all(|control| {
+            if Self::is_axis(*control) {
+                self.axis_mapping(*control).is_some()
+            } else {
+                self.button_source(*control).is_some()
+            }
+        })
+    }
+
     /// Human-readable summary of one control's assignment.
     pub fn summary(&self, id: ControlId) -> String {
         if Self::is_axis(id) {
