@@ -175,7 +175,7 @@ src/
         layouts.rs              # Custom / PS3 / PS4
     xbox/
         mod.rs
-        emulator.rs             # Xbox backend trait + xboxdrv/uinput impls
+        emulator.rs             # XboxBackend trait + native uinput impl
     config/
         mod.rs
         model.rs                # JSON config schema (versioned)
@@ -191,11 +191,16 @@ ui/
 
 Design decisions:
 
-- **Controller identity.** Built from `ID_VENDOR_ID`, `ID_MODEL_ID`, serial
-  (`ID_SERIAL_SHORT` when available) and stable udev path (`ID_PATH` /
-  `ID_PATH_TAG`). A deterministic, sanitized `controller_id` is derived from
-  serial when present, otherwise from the physical path. The transient
-  `/dev/input/eventN` node is never used as an identity.
+- **Controller identity.** Strict hierarchy: (1) a genuine USB serial number
+  (`ID_SERIAL_SHORT`) when available; otherwise (2) the stable physical USB
+  device path from udev (`ID_PATH`, e.g. `usb-0000:00:14.0-3`). The identity
+  is `vendor + product + serial` when a serial exists, and
+  `vendor + product + physical path` when it does not. Two identical
+  controllers plugged into different USB ports therefore get different
+  identities. Moving a controller to a different USB port without a serial is
+  treated as a new physical identity — this is documented, not hidden. The
+  human-readable controller name is NEVER used as identity, and the transient
+  `/dev/input/eventN` node is NEVER used as identity.
 - **Typed mapping model.** `InputSource` (`Key` / `Axis` / `Hat`) and
   `AxisMapping { source, invert }` replace the `name=type,code,value,name`
   strings. Axes carry an explicit `invert` flag.
@@ -206,10 +211,14 @@ Design decisions:
 - **Event abstraction.** A trait (or equivalent) around "read next event /
   drain" lets the detector and mapper be unit-tested with synthetic events;
   the real evdev implementation uses `poll(2)` so the GUI stays responsive.
-- **Xbox backend.** A backend trait with two implementations: `xboxdrv`
-  (generated from the typed mapping, with `--device-name` for custom virtual
-  names) and a pure-Rust `uinput` virtual Xbox pad. Backend quirks stay inside
-  `src/xbox/`.
+- **Xbox backend.** A `XboxBackend` trait whose primary implementation is a
+  NATIVE Rust uinput virtual Xbox controller (`UinputXboxBackend`). XXMapper
+  opens `/dev/uinput`, registers the Xbox 360 pad capabilities, names the
+  device from the user's configuration and drives it directly with translated
+  evdev events. `xboxdrv` is NEVER spawned at runtime and is not a dependency;
+  the old scripts are only used as a behavioral reference for Xbox 360
+  button/axis/d-pad semantics and inversion. Mocks of `XboxBackend` are
+  acceptable for unit tests only.
 - **Configuration.** Single versioned `config.json` under
   `~/.local/share/XXMapper/`, written atomically (temp file + rename). The
   format is designed to be migrated via a `version` field.
