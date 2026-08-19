@@ -13,17 +13,26 @@ use crate::app::monitor::ControllerMonitor;
 use crate::app::state::AppState;
 use crate::controllers::discovery::DiscoveredController;
 use crate::error::AppResult;
-use crate::mapping::model::{ControlId, Layout};
+use crate::mapping::model::{ControlId, ControllerMapping, Layout};
+use crate::mapping::session::{MappingSession, MappingUpdate};
 use crate::ui::{build_controller_infos, build_mapping_controls, MainWindow};
 
-/// Show the mapping view positioned at `index` (0-based).
-fn show_control(win: &MainWindow, index: usize) {
-    let id = ControlId::ALL[index.min(ControlId::ALL.len() - 1)];
-    win.set_mapping_current_control(id.as_str().into());
-    win.set_mapping_control_name(id.label().into());
-    win.set_mapping_instruction(id.instruction().into());
+/// Show the mapping view for a specific control in the waiting phase.
+fn show_control_for(win: &MainWindow, control: ControlId) {
+    let index = ControlId::ALL
+        .iter()
+        .position(|c| *c == control)
+        .unwrap_or(0);
+    win.set_mapping_current_control(control.as_str().into());
+    win.set_mapping_control_name(control.label().into());
+    win.set_mapping_instruction(control.instruction().into());
     win.set_mapping_progress((index + 1) as i32);
     win.set_mapping_progress_total(ControlId::ALL.len() as i32);
+    win.set_mapping_status(
+        "Follow the instruction below. Press the physical control, then release it. \
+         Press Enter or Skip to leave a control unmapped."
+            .into(),
+    );
 }
 
 /// Run the XXMapper GUI. Blocks until the window is closed.
@@ -35,7 +44,11 @@ pub fn run() -> AppResult<()> {
 
     let latest: Rc<RefCell<Vec<DiscoveredController>>> = Rc::new(RefCell::new(Vec::new()));
     let selected: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
-    let mapping_index: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
+    let session: Rc<RefCell<Option<MappingSession>>> = Rc::new(RefCell::new(None));
+    let session_rx: Rc<RefCell<Option<mpsc::Receiver<MappingUpdate>>>> =
+        Rc::new(RefCell::new(None));
+    let latest_mapping: Rc<RefCell<ControllerMapping>> =
+        Rc::new(RefCell::new(ControllerMapping::default()));
 
     let (tx, rx) = mpsc::channel();
     let _monitor = ControllerMonitor::spawn(tx, Duration::from_millis(1000));
@@ -147,14 +160,19 @@ pub fn run() -> AppResult<()> {
         });
     }
 
-    // ---- mapping view navigation (capture arrives in a later phase) ----
+    // ---- mapping session ----
     {
         let win = window.clone_strong();
         let state = state.clone();
         let latest = latest.clone();
         let selected = selected.clone();
-        let mapping_index = mapping_index.clone();
+        let session = session.clone();
+        let session_rx = session_rx.clone();
+        let latest_mapping = latest_mapping.clone();
         window.on_configure_mapping(move || {
+            if session.borrow().is_some() {
+                return;
+            }
             let Some(id) = selected.borrow().clone() else {
                 return;
             };
@@ -171,82 +189,67 @@ pub fn run() -> AppResult<()> {
                 .controller_for(&discovered)
                 .map(|entry| entry.mapping.clone())
                 .unwrap_or_default();
-            let controls = build_mapping_controls(&mapping);
+            *latest_mapping.borrow_mut() = mapping.clone();
+
+            let started = MappingSession::start(&discovered.device_path, mapping);
+            let mut running = match started {
+                Ok(running) => running,
+                Err(e) => {
+                    win.set_mapping_status(format!("Cannot capture: {e}").into());
+                    return;
+                }
+            };
+            let Some(updates) = running.take_updates() else {
+                return;
+            };
+            *session.borrow_mut() = Some(running);
+            *session_rx.borrow_mut() = Some(updates);
+
+            let controls = build_mapping_controls(&latest_mapping.borrow());
             win.set_mapping_active(true);
             win.set_mapping_controls(ModelRc::new(VecModel::from(controls)));
-            win.set_mapping_status(
-                "Follow the instruction below. Press the physical control, then release it. \
-                 Press Enter or Skip to leave a control unmapped."
-                    .into(),
-            );
-            *mapping_index.borrow_mut() = 0;
-            show_control(&win, 0);
+            show_control_for(&win, ControlId::LeftStickX);
         });
     }
     {
-        let win = window.clone_strong();
-        let state = state.clone();
-        let latest = latest.clone();
-        let selected = selected.clone();
-        let mapping_index = mapping_index.clone();
+        let session = session.clone();
         window.on_skip_mapping(move || {
-            let mut index = mapping_index.borrow_mut();
-            if *index + 1 < ControlId::ALL.len() {
-                *index += 1;
-                show_control(&win, *index);
-            } else {
-                win.set_mapping_active(false);
-                let Some(id) = selected.borrow().clone() else {
-                    return;
-                };
-                let Some(discovered) = latest
-                    .borrow()
-                    .iter()
-                    .find(|d| d.identity.id() == id)
-                    .cloned()
-                else {
-                    return;
-                };
-                let mapping = state
-                    .borrow()
-                    .controller_for(&discovered)
-                    .map(|entry| entry.mapping.clone())
-                    .unwrap_or_default();
-                win.set_mapping_controls(ModelRc::new(VecModel::from(build_mapping_controls(
-                    &mapping,
-                ))));
+            if let Some(running) = session.borrow().as_ref() {
+                running.skip();
             }
         });
     }
     {
-        let win = window.clone_strong();
-        let mapping_index = mapping_index.clone();
+        let session = session.clone();
         window.on_jump_to(move |id| {
-            if let Some(control) = ControlId::from_str(id.as_str()) {
-                let index = ControlId::ALL
-                    .iter()
-                    .position(|c| *c == control)
-                    .unwrap_or(0);
-                *mapping_index.borrow_mut() = index;
-                show_control(&win, index);
+            let Some(control) = ControlId::from_str(id.as_str()) else {
+                return;
+            };
+            if let Some(running) = session.borrow().as_ref() {
+                running.jump_to(control);
             }
         });
     }
     {
-        let win = window.clone_strong();
+        let session = session.clone();
         window.on_cancel_mapping(move || {
-            win.set_mapping_active(false);
+            if let Some(running) = session.borrow().as_ref() {
+                running.cancel();
+            }
         });
     }
 
-    // ---- periodic refresh from the monitor ----
+    // ---- periodic refresh from the monitor and the mapping session ----
     let refresh = {
         let win = window.clone_strong();
         let latest = latest.clone();
         let selected = selected.clone();
         let state = state.clone();
+        let session = session.clone();
+        let session_rx = session_rx.clone();
+        let latest_mapping = latest_mapping.clone();
         let timer = Timer::default();
-        timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        timer.start(TimerMode::Repeated, Duration::from_millis(100), move || {
             while let Ok(snapshot) = rx.try_recv() {
                 *latest.borrow_mut() = snapshot;
             }
@@ -256,6 +259,72 @@ pub fn run() -> AppResult<()> {
                 let state = state.borrow();
                 let infos = build_controller_infos(&snapshot, &state.config());
                 win.set_controllers(ModelRc::new(VecModel::from(infos)));
+            }
+
+            // Drain mapping session updates.
+            if let Some(updates) = session_rx.borrow().as_ref() {
+                let mut ended = false;
+                while let Ok(update) = updates.try_recv() {
+                    match update {
+                        MappingUpdate::Held { control } => {
+                            win.set_mapping_status(
+                                format!(
+                                    "Held: {} — now RELEASE the control to capture it.",
+                                    control.label()
+                                )
+                                .into(),
+                            );
+                        }
+                        MappingUpdate::Changed {
+                            control,
+                            mapping,
+                            next,
+                        } => {
+                            *latest_mapping.borrow_mut() = mapping.clone();
+                            win.set_mapping_controls(ModelRc::new(VecModel::from(
+                                build_mapping_controls(&mapping),
+                            )));
+                            match next {
+                                Some(next_control) => {
+                                    show_control_for(&win, next_control);
+                                }
+                                None => {
+                                    ended = true;
+                                }
+                            }
+                        }
+                        MappingUpdate::Finished => {
+                            // Persist the captured mapping.
+                            let mapping = latest_mapping.borrow().clone();
+                            if let Some(id) = selected.borrow().clone() {
+                                if let Some(discovered) = latest
+                                    .borrow()
+                                    .iter()
+                                    .find(|d| d.identity.id() == id)
+                                    .cloned()
+                                {
+                                    state.borrow_mut().set_mapping(&discovered, mapping.clone());
+                                    let _ = state.borrow().save();
+                                }
+                            }
+                            win.set_mapping_active(false);
+                            ended = true;
+                        }
+                        MappingUpdate::Cancelled => {
+                            win.set_mapping_active(false);
+                            ended = true;
+                        }
+                        MappingUpdate::Error(message) => {
+                            win.set_mapping_status(message.into());
+                            win.set_mapping_active(false);
+                            ended = true;
+                        }
+                    }
+                }
+                if ended {
+                    *session.borrow_mut() = None;
+                    *session_rx.borrow_mut() = None;
+                }
             }
 
             let Some(id) = selected.borrow().clone() else {
