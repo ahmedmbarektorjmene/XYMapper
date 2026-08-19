@@ -1,0 +1,124 @@
+import { Button, GroupBox, ListView } from "std-widgets.slint";
+
+export struct MappingControlInfo {
+    id: string,
+    label: string,
+    value: string,
+}
+
+export component MappingView inherits Rectangle {
+    in property <string> control-name;
+    in property <string> instruction;
+    in property <string> status;
+    in property <int> progress;
+    in property <int> progress-total;
+    in property <[MappingControlInfo]> controls;
+    in property <string> current-control;
+    callback skip();
+    callback cancel();
+    callback jump-to(string);
+
+    focus-scope := FocusScope {
+        key-pressed(event) => {
+            if (event.text == "\n") {
+                root.skip();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    init => { focus-scope.focus(); }
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 12px;
+
+        Text {
+            text: "Manual Mapping";
+            font-size: 22px;
+            font-weight: 700;
+            color: #eceff0;
+        }
+
+        Text {
+            text: root.status;
+            font-size: 14px;
+            color: #d8dee0;
+            wrap: word-wrap;
+        }
+
+        GroupBox {
+            title: root.control-name;
+            VerticalLayout {
+                padding: 8px;
+                Text {
+                    text: root.instruction;
+                    wrap: word-wrap;
+                    font-size: 14px;
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 10px;
+
+            Text {
+                text: root.progress + " of " + root.progress-total;
+                vertical-alignment: center;
+                color: #859295;
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Button {
+                text: "Skip";
+                clicked => { root.skip(); }
+            }
+
+            Button {
+                text: "Cancel";
+                clicked => { root.cancel(); }
+            }
+        }
+
+        Text {
+            text: "Controls — click one to map from there";
+            font-size: 13px;
+            color: #859295;
+        }
+
+        ListView {
+            height: 220px;
+
+            for item in root.controls: Rectangle {
+                height: 34px;
+                background: root.current-control == item.id ? #27404d : transparent;
+
+                HorizontalLayout {
+                    padding: 6px;
+                    spacing: 8px;
+
+                    Text {
+                        text: item.label;
+                        width: 210px;
+                        font-size: 13px;
+                        color: #d8dee0;
+                    }
+
+                    Text {
+                        text: item.value;
+                        font-size: 12px;
+                        color: #859295;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+
+                TouchArea {
+                    clicked => { root.jump-to(item.id); }
+                }
+            }
+        }
+    }
+}

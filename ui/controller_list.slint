@@ -1,0 +1,66 @@
+import { ListView } from "std-widgets.slint";
+
+export struct ControllerInfo {
+    id: string,
+    name: string,
+    vid_pid: string,
+    path: string,
+    status: string,
+    details: string,
+}
+
+export component ControllerList inherits Rectangle {
+    in property <[ControllerInfo]> controllers: [];
+    in property <string> selected-id;
+    callback controller-selected(string);
+
+    background: #181a1b;
+
+    ListView {
+        height: parent.height;
+        width: parent.width;
+
+        for item in root.controllers: Rectangle {
+            height: 76px;
+            width: parent.width;
+            background: root.selected-id == item.id ? #25303a : transparent;
+
+            VerticalLayout {
+                padding: 8px;
+                spacing: 3px;
+
+                Text {
+                    text: item.name;
+                    font-size: 15px;
+                    font-weight: 600;
+                    color: #eceff0;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: item.vid_pid;
+                    font-size: 12px;
+                    color: #859295;
+                }
+
+                Text {
+                    text: item.path;
+                    font-size: 11px;
+                    color: #6b7375;
+                    overflow: elide;
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                y: parent.height - 1px;
+                width: parent.width;
+                background: #2a2f30;
+            }
+
+            TouchArea {
+                clicked => { root.controller-selected(item.id); }
+            }
+        }
+    }
+}

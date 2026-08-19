@@ -1,6 +1,23 @@
 [package]
 name = "XXMapper"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "Map physical Linux controllers to virtual Xbox controllers with a Slint GUI"
+license = "MIT"
 
 [dependencies]
+slint = "1"
+evdev = "0.12"
+udev = "0.9"
+uinput = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+nix = { version = "0.29", features = ["poll"] }
+libc = "0.2"
+thiserror = "2"
+
+[build-dependencies]
+slint-build = "1"
+
+[profile.release]
+lto = true

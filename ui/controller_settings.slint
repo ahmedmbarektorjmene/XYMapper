@@ -1,0 +1,104 @@
+import { Button, ComboBox, GroupBox, LineEdit, ScrollView, Switch } from "std-widgets.slint";
+import { ControllerInfo } from "controller_list.slint";
+
+export component ControllerSettings inherits Rectangle {
+    in property <ControllerInfo> controller;
+    in property <bool> enabled;
+    in property <string> virtual-name;
+    in property <string> layout;
+    callback toggle-enabled(bool);
+    callback virtual-name-changed(string);
+    callback layout-changed(string);
+    callback configure-mapping();
+    callback save-settings();
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 14px;
+
+        Text {
+            text: root.controller.name;
+            font-size: 22px;
+            font-weight: 700;
+            color: #eceff0;
+        }
+
+        Text {
+            text: root.controller.vid_pid + "  •  " + root.controller.status;
+            font-size: 13px;
+            color: #859295;
+        }
+
+        GroupBox {
+            title: "Xbox Mapping";
+            VerticalLayout {
+                spacing: 10px;
+                padding: 8px;
+
+                HorizontalLayout {
+                    Text {
+                        text: "Mapping enabled";
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    Switch {
+                        checked: root.enabled;
+                        toggled => { root.toggle-enabled(self.checked); }
+                    }
+                }
+
+                HorizontalLayout {
+                    Text {
+                        text: "Virtual controller name";
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    LineEdit {
+                        text: root.virtual-name;
+                        edited(text) => { root.virtual-name-changed(text); }
+                    }
+                }
+
+                HorizontalLayout {
+                    Text {
+                        text: "Mapping layout";
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    ComboBox {
+                        current-index: root.layout == "ps3" ? 1 : root.layout == "ps4" ? 2 : 0;
+                        model: ["Custom", "PS3", "PS4"];
+                        selected(value) => { root.layout-changed(value); }
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 10px;
+
+            Button {
+                text: "Configure Mapping";
+                clicked => { root.configure-mapping(); }
+            }
+
+            Button {
+                text: "Save";
+                clicked => { root.save-settings(); }
+            }
+        }
+
+        GroupBox {
+            title: "Details";
+            ScrollView {
+                height: 150px;
+                Text {
+                    text: root.controller.details;
+                    wrap: word-wrap;
+                    font-size: 12px;
+                    color: #9aa5a8;
+                }
+            }
+        }
+    }
+}

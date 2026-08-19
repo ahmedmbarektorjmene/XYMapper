@@ -1,0 +1,89 @@
+import { ControllerInfo } from "controller_list.slint";
+import { ControllerList } from "controller_list.slint";
+import { ControllerSettings } from "controller_settings.slint";
+import { MappingControlInfo } from "mapping_view.slint";
+import { MappingView } from "mapping_view.slint";
+
+export component MainWindow inherits Window {
+    title: "XXMapper";
+    width: 1020px;
+    height: 640px;
+    background: #1b1d1e;
+
+    in property <[ControllerInfo]> controllers: [];
+    in property <bool> has-selection: false;
+    in property <ControllerInfo> selected-controller;
+    in property <string> selected-id;
+    in property <bool> selected-enabled: false;
+    in property <string> selected-virtual-name: "";
+    in property <string> selected-layout: "custom";
+
+    in property <bool> mapping-active: false;
+    in property <string> mapping-control-name: "";
+    in property <string> mapping-instruction: "";
+    in property <string> mapping-status: "";
+    in property <int> mapping-progress: 0;
+    in property <int> mapping-progress-total: 0;
+    in property <[MappingControlInfo]> mapping-controls: [];
+    in property <string> mapping-current-control: "";
+
+    callback controller-selected(string);
+    callback toggle-enabled(bool);
+    callback virtual-name-changed(string);
+    callback layout-changed(string);
+    callback configure-mapping();
+    callback save-settings();
+    callback cancel-mapping();
+    callback skip-mapping();
+    callback jump-to(string);
+
+    HorizontalLayout {
+        ControllerList {
+            width: 330px;
+            controllers: root.controllers;
+            selected-id: root.selected-id;
+            controller-selected(id) => { root.controller-selected(id); }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+
+            if root.mapping-active: MappingView {
+                width: parent.width;
+                height: parent.height;
+                control-name: root.mapping-control-name;
+                instruction: root.mapping-instruction;
+                status: root.mapping-status;
+                progress: root.mapping-progress;
+                progress-total: root.mapping-progress-total;
+                controls: root.mapping-controls;
+                current-control: root.mapping-current-control;
+                skip => { root.skip-mapping(); }
+                cancel => { root.cancel-mapping(); }
+                jump-to(id) => { root.jump-to(id); }
+            }
+
+            if !root.mapping-active && root.has-selection: ControllerSettings {
+                width: parent.width;
+                height: parent.height;
+                controller: root.selected-controller;
+                enabled: root.selected-enabled;
+                virtual-name: root.selected-virtual-name;
+                layout: root.selected-layout;
+                toggle-enabled(v) => { root.toggle-enabled(v); }
+                virtual-name-changed(v) => { root.virtual-name-changed(v); }
+                layout-changed(v) => { root.layout-changed(v); }
+                configure-mapping => { root.configure-mapping(); }
+                save-settings => { root.save-settings(); }
+            }
+
+            if !root.mapping-active && !root.has-selection: Text {
+                text: "Select a controller on the left to configure it.";
+                color: #859295;
+                font-size: 16px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
